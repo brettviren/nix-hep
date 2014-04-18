@@ -1,0 +1,159 @@
+#!/bin/bash -e
+
+#set -x
+
+# automate this:
+# https://nixos.org/wiki/How_to_install_nix_in_home_(on_another_distribution)
+
+usage () {
+    echo "usage: nix-bootstrap /path/to/nix-bootstrap /path/to/nix-store /path/to/nix-var"
+    echo "see: https://nixos.org/wiki/How_to_install_nix_in_home_(on_another_distribution)"
+    exit 1
+}
+nixbootdir="$1" ; shift
+if [ -z "$nixbootdir" ] ; then usage; fi
+nixbootdir="$(readlink -m $nixbootdir)"
+if [ -d "$nixbootdir" ] ; then
+    echo "Note, nix boot dir already exists: $nixbootdir"
+fi
+
+nixstoredir="$1" ; shift
+if [ -z "$nixstoredir" ] ; then usage; fi
+nixstoredir="$(readlink -m $nixstoredir)"
+
+nixvardir="$1" 
+if [ -z "$nixvardir" ] ; then 
+    nixvardir=$(dirname $nixstoredir)/var
+fi
+nixvardir="$(readlink -m $nixvardir)"
+
+mkdir -p "$nixbootdir/src"
+cd "$nixbootdir/src"
+
+nixsetup=$nixbootdir/nix-setup
+cat <<EOF> $nixsetup
+export PATH="$nixbootdir/bin:$PATH"
+export PKG_CONFIG_PATH="$nixbootdir/lib/pkgconfig${PKG_CONFIG_PATH:+:}$PKG_CONFIG_PATH"
+export LDFLAGS="-L$nixbootdir/lib $LDFLAGS"
+export CPPFLAGS="-I$nixbootdir/include $CPPFLAGS"
+export PERL5OPT="-I$nixbootdir/lib/perl"
+EOF
+echo "Sourcing $nixsetup, you'll wanna do this too."
+source nix-setup
+
+download () {
+    local url=$1 ; shift
+    local tgt=$(basename $url)
+    if [ -f "$tgt" ] ; then
+	echo "Already downloaded $url"
+	return
+    fi
+    wget -q $url
+}
+
+unpack () {
+    local pkg=$1 ; shift
+    local tgt=$1 ; shift
+    if [ -n "$tgt" -a -d $tgt ] ; then
+	echo "Already unpacked $pkg"
+	return
+    fi
+    tar -xf $pkg
+}
+
+already () {
+    local pkg=$1 ; shift
+    echo "Already built: $pkg"
+}
+
+pkg=bzip2-1.0.6
+if [ -d "$pkg" ] ; then
+    already $pkg
+else
+    download http://bzip.org/1.0.6/$pkg.tar.gz
+    unpack $pkg.tar.gz $pkg
+    pushd $pkg
+    make -f Makefile-libbz2_so
+    make install PREFIX="$nixbootdir"
+    cp libbz2.so.1.0 libbz2.so.1.0.6 "$nixbootdir/lib"
+    popd
+fi
+
+
+pkg=curl-7.35.0
+if [ -d "$pkg" ] ; then
+    already $pkg
+else
+    download http://curl.haxx.se/download/$pkg.tar.lzma
+    unpack $pkg.tar.lzma $pkg
+    pushd $pkg
+    ./configure --prefix="$nixbootdir"
+    make 
+    make install
+    popd
+fi
+
+pkg=sqlite-autoconf-3080300
+if [ -d "$pkg" ] ; then
+    already $pkg
+else
+    download http://www.sqlite.org/2014/$pkg.tar.gz
+    unpack $pkg.tar.gz $pkg
+    pushd $pkg
+    ./configure --prefix="$nixbootdir"
+    make 
+    make install
+    popd
+fi
+
+for url in \
+    http://search.cpan.org/CPAN/authors/id/T/TI/TIMB/DBI-1.631.tar.gz \
+    http://search.cpan.org/CPAN/authors/id/I/IS/ISHIGAKI/DBD-SQLite-1.40.tar.gz \
+    http://search.cpan.org/CPAN/authors/id/S/SZ/SZBALINT/WWW-Curl-4.15.tar.gz ; 
+do
+    tarball=$(basename $url)
+    srcdir=$(basename $tarball .tar.gz)
+    if [ -d $srcdir ] ; then
+	already $srcdir
+	continue
+    fi
+    download $url
+    unpack $tarball $srcdir
+    pushd $srcdir
+    perl Makefile.PL PREFIX="$nixbootdir"
+    make
+    make install
+    popd
+done
+
+pkg=nix-1.6.1
+if [ -d "$pkg" ] ; then
+    already $pkg
+else
+    download http://nixos.org/releases/nix/$pkg/$pkg.tar.xz
+    unpack $pkg.tar.xz $pkg
+    pushd $pkg
+    ./configure --prefix=$nixbootdir --with-store-dir=$nixstoredir --localstatedir=$nixvardir
+    make
+    make install
+    popd
+fi
+
+confignix="$HOME/.nixpkgs/config.nix"
+if [ -f "$confignix" ] ; then
+    echo "Already have config: $confignix"
+else
+    echo "Creating config: $confignix"
+    mkdir -p $(dirname $confignix)
+    cat <<EOF > $confignix
+ pkgs:
+ {
+   packageOverrides = self: {
+     nix = self.nix.override {
+       storeDir = "$nixstoredir";
+       stateDir = "$nixvardir";
+     };
+   };
+ }
+EOF
+fi

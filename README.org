@@ -1,3 +1,9 @@
 nix-hep - Nix distribution of HEP software
 
-This is currently experimental.
+This is an experimental, no pun intended, distribution of HEP software for the Nix package manager.
+
+* Bootstrap
+
+The script [[./nix-bootstrap]] helps implement much of the [[https://nixos.org/wiki/How_to_install_nix_in_home_(on_another_distribution)][Nix bootstrap procedure ]].
+
+
