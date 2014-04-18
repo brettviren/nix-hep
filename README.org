@@ -1,0 +1,3 @@
+nix-hep - Nix distribution of HEP software
+
+This is currently experimental.
