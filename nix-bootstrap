@@ -39,7 +39,7 @@ export CPPFLAGS="-I$nixbootdir/include $CPPFLAGS"
 export PERL5OPT="-I$nixbootdir/lib/perl"
 EOF
 echo "Sourcing $nixsetup, you'll wanna do this too."
-source nix-setup
+source $nixsetup
 
 download () {
     local url=$1 ; shift
@@ -156,4 +156,17 @@ else
    };
  }
 EOF
+fi
+
+if [ -d $HOME/.nix-defexpr ] ; then
+    echo "Already have $HOME/.nix-defexpr, won't get nixpkgs"
+else
+    nix-channel --add http://nixos.org/channels/nixpkgs-unstable
+    nix-channel --update
+fi
+
+if [ -n "$(which nix 2>/dev/null)" ] ; then
+    echo "Already installed nix"
+else
+    nix-env -i nix
 fi
